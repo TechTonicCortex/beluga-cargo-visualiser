@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Airbus Beluga — Cargo Visualiser</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#070d18;--s:#0d1826;--s2:#111f30;--accent:#00b4ff;--gold:#f0c040;--green:#00d48a;--red:#ff5252;--text:#e8f4ff;--dim:#4a7a9a;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--text);font-family:'Barlow',sans-serif;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:28px 20px 52px;gap:24px;}
+
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%,#0d2a44 0%,#070d18 70%);z-index:0;}
+.page{position:relative;z-index:1;width:100%;max-width:1000px;display:flex;flex-direction:column;gap:22px;}
+
+/* Header */
+.header{text-align:center;}
+.htag{font-size:10px;letter-spacing:5px;color:var(--accent);text-transform:uppercase;margin-bottom:6px;}
+.htitle{font-family:'Bebas Neue',sans-serif;font-size:58px;letter-spacing:4px;color:#f0f8ff;line-height:1;text-shadow:0 0 40px rgba(0,180,255,0.2);}
+.hsub{font-size:13px;color:var(--dim);margin-top:4px;font-style:italic;}
+
+/* Tab buttons */
+.tabs{display:flex;gap:10px;justify-content:center;}
+.tab{padding:10px 24px;border:1px solid rgba(0,180,255,0.2);border-radius:30px;background:var(--s);color:var(--dim);font-family:'Barlow',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;letter-spacing:0.5px;}
+.tab:hover{border-color:var(--accent);color:var(--accent);}
+.tab.on{background:rgba(0,180,255,0.12);border-color:var(--accent);color:var(--accent);}
+
+/* Comparison view */
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.plane-card{background:var(--s);border:1px solid rgba(0,180,255,0.1);border-radius:14px;padding:22px;display:flex;flex-direction:column;gap:14px;}
+.plane-card.highlight{border-color:rgba(0,180,255,0.35);background:rgba(13,24,38,0.9);}
+.plane-label{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:2px;}
+.plane-sub{font-size:11px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin-top:-10px;}
+
+/* Cross-section canvas */
+canvas.cross{width:100%;border-radius:8px;background:#050b14;}
+
+/* Stats row */
+.stats-row{display:flex;gap:12px;flex-wrap:wrap;}
+.stat{background:var(--s2);border-radius:8px;padding:10px 14px;flex:1;min-width:80px;}
+.sv{font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px;}
+.sl{font-size:9px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;margin-top:1px;}
+
+/* Loading animation view */
+.loader-view{background:var(--s);border:1px solid rgba(0,180,255,0.15);border-radius:14px;padding:24px;}
+.loader-title{font-family:'Bebas Neue',sans-serif;font-size:24px;letter-spacing:2px;margin-bottom:16px;}
+canvas.loader{width:100%;border-radius:8px;background:#050b14;display:block;}
+.loader-controls{display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap;}
+.ctrl-btn{padding:9px 20px;border:1px solid rgba(0,180,255,0.25);border-radius:8px;background:var(--s2);color:var(--text);font-family:'Barlow',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all 0.2s;}
+.ctrl-btn:hover{border-color:var(--accent);color:var(--accent);}
+.ctrl-btn.primary{background:var(--accent);border-color:var(--accent);color:#000;}
+.progress-wrap{flex:1;height:6px;background:var(--s2);border-radius:3px;overflow:hidden;min-width:100px;}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--green));border-radius:3px;transition:width 0.3s;}
+.progress-label{font-size:12px;color:var(--dim);font-family:'Barlow',monospace;white-space:nowrap;}
+
+/* What fits section */
+.fits-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.fit-card{background:var(--s);border:1px solid rgba(0,180,255,0.1);border-radius:10px;padding:14px;text-align:center;transition:all 0.2s;}
+.fit-card:hover{border-color:rgba(0,180,255,0.3);transform:translateY(-2px);}
+.fit-icon{font-size:30px;margin-bottom:6px;}
+.fit-name{font-size:12px;font-weight:600;color:var(--text);margin-bottom:3px;}
+.fit-detail{font-size:11px;color:var(--dim);line-height:1.5;}
+.fit-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;margin-top:5px;}
+.fit-badge.yes{background:rgba(0,212,138,0.15);color:var(--green);border:1px solid rgba(0,212,138,0.3);}
+.fit-badge.no{background:rgba(255,82,82,0.1);color:var(--red);border:1px solid rgba(255,82,82,0.2);}
+
+/* Section titles */
+.section-title{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:2px;color:var(--accent);margin-bottom:12px;}
+
+.hidden{display:none;}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="htag">School Presentation — Interactive</div>
+    <div class="htitle">BELUGA CARGO<br>VISUALISER</div>
+    <div class="hsub">How does the world's biggest cargo hold compare — and what fits inside?</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" onclick="switchTab('compare')">📐 Size Comparison</button>
+    <button class="tab" onclick="switchTab('load')">🔄 Loading Animation</button>
+    <button class="tab" onclick="switchTab('fits')">📦 What Fits Inside?</button>
+  </div>
+
+  <!-- TAB 1: COMPARISON -->
+  <div id="tab-compare" class="compare-grid">
+
+    <div class="plane-card">
+      <div>
+        <div class="plane-label" style="color:#a0aec0">A320 Airliner</div>
+        <div class="plane-sub">Standard passenger jet cross-section</div>
+      </div>
+      <canvas class="cross" id="c-a320" width="420" height="220"></canvas>
+      <div class="stats-row">
+        <div class="stat"><div class="sv" style="color:#a0aec0">3.96m</div><div class="sl">Fuselage width</div></div>
+        <div class="stat"><div class="sv" style="color:#a0aec0">2.2m</div><div class="sl">Cabin height</div></div>
+        <div class="stat"><div class="sv" style="color:#a0aec0">150</div><div class="sl">Passengers</div></div>
+      </div>
+    </div>
+
+    <div class="plane-card highlight">
+      <div>
+        <div class="plane-label" style="color:var(--accent)">Beluga ST</div>
+        <div class="plane-sub">Super Transporter — same scale</div>
+      </div>
+      <canvas class="cross" id="c-beluga" width="420" height="220"></canvas>
+      <div class="stats-row">
+        <div class="stat"><div class="sv" style="color:var(--accent)">7.7m</div><div class="sl">Cargo width</div></div>
+        <div class="stat"><div class="sv" style="color:var(--accent)">6.7m</div><div class="sl">Cargo height</div></div>
+        <div class="stat"><div class="sv" style="color:var(--accent)">47t</div><div class="sl">Max payload</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- TAB 2: LOADING ANIMATION -->
+  <div id="tab-load" class="loader-view hidden">
+    <div class="loader-title">⬆️ BELUGA LOADING SEQUENCE</div>
+    <canvas class="loader" id="c-load" width="900" height="320"></canvas>
+    <div class="loader-controls">
+      <button class="ctrl-btn primary" id="btnLoad" onclick="startLoad()">▶ Start Loading</button>
+      <button class="ctrl-btn" onclick="resetLoad()">↺ Reset</button>
+      <div class="progress-wrap"><div class="progress-fill" id="progFill" style="width:0%"></div></div>
+      <div class="progress-label" id="progLabel">Ready</div>
+    </div>
+  </div>
+
+  <!-- TAB 3: WHAT FITS -->
+  <div id="tab-fits" class="hidden">
+    <div class="section-title">What can fit inside the Beluga?</div>
+    <div class="fits-grid">
+      <div class="fit-card">
+        <div class="fit-icon">✈️</div>
+        <div class="fit-name">A320 Wing</div>
+        <div class="fit-detail">34m wingspan wing section — the Beluga's primary cargo. Fits perfectly.</div>
+        <div class="fit-badge yes">✓ FITS</div>
+      </div>
+      <div class="fit-card">
+        <div class="fit-icon">🚁</div>
+        <div class="fit-name">Helicopter</div>
+        <div class="fit-detail">A full military helicopter fits with room to spare — has been done.</div>
+        <div class="fit-badge yes">✓ FITS</div>
+      </div>
+      <div class="fit-card">
+        <div class="fit-icon">🚌</div>
+        <div class="fit-name">Double Decker Bus</div>
+        <div class="fit-detail">A London double decker bus (4.2m tall) fits inside the 6.7m hold height.</div>
+        <div class="fit-badge yes">✓ FITS</div>
+      </div>
+      <div class="fit-card">
+        <div class="fit-icon">🦕</div>
+        <div class="fit-name">T-Rex Skeleton</div>
+        <div class="fit-detail">A full T-Rex replica at ~12m long fits in the 37.7m hold. Has transported museum exhibits.</div>
+        <div class="fit-badge yes">✓ FITS</div>
+      </div>
+      <div class="fit-card">
+        <div class="fit-icon">🗽</div>
+        <div class="fit-name">Statue of Liberty</div>
+        <div class="fit-detail">The Statue of Liberty (93m) is way too tall. Even lying down it wouldn't fit.</div>
+        <div class="fit-badge no">✗ TOO BIG</div>
+      </div>
+      <div class="fit-card">
+        <div class="fit-icon">🐋</div>
+        <div class="fit-name">Blue Whale</div>
+        <div class="fit-detail">A blue whale (30m, 150t) is too heavy — Beluga max payload is 47t.</div>
+        <div class="fit-badge no">✗ TOO HEAVY</div>
+      </div>
+      <div class="fit-card">
+        <div class="fit-icon">🚂</div>
+        <div class="fit-name">Train Carriage</div>
+        <div class="fit-detail">A standard train carriage (3.7m wide, 3.9m tall) fits inside the hold width.</div>
+        <div class="fit-badge yes">✓ FITS</div>
+      </div>
+      <div class="fit-card">
+        <div class="fit-icon">🏠</div>
+        <div class="fit-name">Terraced House</div>
+        <div class="fit-detail">A typical UK terraced house (5m wide, 7m tall) — just barely fits width-wise!</div>
+        <div class="fit-badge yes">✓ JUST FITS</div>
+      </div>
+      <div class="fit-card">
+        <div class="fit-icon">🚀</div>
+        <div class="fit-name">Space Shuttle (main body)</div>
+        <div class="fit-detail">The shuttle orbiter (37m long) would just fit length-wise, but is too wide at 8.7m.</div>
+        <div class="fit-badge no">✗ TOO WIDE</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── TAB SWITCHING ──────────────────────────────────────────────────
+function switchTab(id) {
+  document.getElementById('tab-compare').classList.add('hidden');
+  document.getElementById('tab-load').classList.add('hidden');
+  document.getElementById('tab-fits').classList.add('hidden');
+  document.getElementById('tab-'+id).classList.remove('hidden');
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('on',['compare','load','fits'][i]===id);
+  });
+  if (id==='compare') drawCrossSections();
+}
+
+// ── CROSS SECTION DRAWINGS ─────────────────────────────────────────
+function drawCrossSections() {
+  drawA320();
+  drawBelugaSection();
+}
+
+function drawA320() {
+  const canvas = document.getElementById('c-a320');
+  const ctx = canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+
+  // Background
+  ctx.fillStyle='#050b14'; ctx.fillRect(0,0,W,H);
+
+  // Scale: A320 fuselage ~4m wide, canvas ~420px → 1m = 50px
+  const SCALE = 42; // px per metre
+  const cx=W/2, cy=H/2+10;
+
+  // A320 outer fuselage (circle)
+  const R = 2.0*SCALE; // 4m diameter → 2m radius
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI*2);
+  ctx.fillStyle='#c8dff0'; ctx.fill();
+  ctx.strokeStyle='#8ab0cc'; ctx.lineWidth=3; ctx.stroke();
+
+  // Cabin floor
+  const floorY = cy - 0.2*SCALE;
+  ctx.fillStyle='#8ab0cc';
+  ctx.fillRect(cx-R+8, floorY-4, (R-8)*2, 5);
+
+  // Seats (simplified)
+  const seatColors=['#3a7abf','#5a9adf'];
+  for(let col=0;col<6;col++){
+    const sx = cx - 2.5*SCALE + col*(0.8*SCALE) + (col>=3?0.3*SCALE:0);
+    ctx.fillStyle=seatColors[col%2];
+    ctx.fillRect(sx, floorY-1.1*SCALE, 0.55*SCALE, 0.9*SCALE);
+    ctx.fillStyle='#daeaf8';
+    ctx.beginPath();
+    ctx.arc(sx+0.275*SCALE, floorY-1.15*SCALE, 0.2*SCALE, Math.PI,0);
+    ctx.fill();
+  }
+
+  // Overhead bins
+  ctx.fillStyle='#a8c8e0';
+  ctx.beginPath();
+  ctx.roundRect(cx-1.6*SCALE, floorY-1.5*SCALE, 0.9*SCALE, 0.4*SCALE, 4);
+  ctx.fill(); ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(cx+0.7*SCALE, floorY-1.5*SCALE, 0.9*SCALE, 0.4*SCALE, 4);
+  ctx.fill(); ctx.stroke();
+
+  // Cargo belly
+  ctx.fillStyle='rgba(255,180,0,0.2)';
+  ctx.beginPath();
+  ctx.arc(cx, cy, R-4, Math.PI*0.05, Math.PI*0.95);
+  ctx.lineTo(cx+R-8, floorY+4); ctx.lineTo(cx-R+8, floorY+4); ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle='rgba(255,180,0,0.4)'; ctx.lineWidth=1; ctx.setLineDash([4,4]); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Labels
+  ctx.fillStyle='#e2ecf8'; ctx.font='bold 11px Barlow'; ctx.textAlign='center';
+  ctx.fillText('Cabin', cx, floorY-0.6*SCALE);
+  ctx.fillStyle='rgba(255,180,0,0.8)';
+  ctx.fillText('Cargo belly', cx, cy+0.7*SCALE);
+
+  // Dimension line
+  ctx.strokeStyle='rgba(255,255,255,0.2)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(cx-R, H-18); ctx.lineTo(cx+R, H-18); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,255,255,0.4)'; ctx.font='11px Barlow';
+  ctx.fillText('3.96m wide', cx, H-5);
+}
+
+function drawBelugaSection() {
+  const canvas = document.getElementById('c-beluga');
+  const ctx = canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#050b14'; ctx.fillRect(0,0,W,H);
+
+  const SCALE = 24; // smaller scale — Beluga is much bigger
+  const cx=W/2, cy=H/2+30;
+
+  // Lower fuselage (A300 lower lobe) — circle
+  const Rl = 2.8*SCALE;
+  ctx.beginPath();
+  ctx.arc(cx, cy+1.5*SCALE, Rl, 0, Math.PI*2);
+  ctx.fillStyle='#b0c8e0'; ctx.fill();
+  ctx.strokeStyle='#8aaac0'; ctx.lineWidth=3; ctx.stroke();
+
+  // MASSIVE cargo hold upper section
+  const holdW = 3.85*SCALE; // 7.7m / 2
+  const holdH = 6.7*SCALE;
+  const holdY = cy+1.5*SCALE - Rl;
+
+  // Draw hold as rounded rectangle on top
+  ctx.beginPath();
+  ctx.roundRect(cx-holdW, holdY-holdH+Rl, holdW*2, holdH, [80,80,10,10]);
+  ctx.fillStyle='#d0e8f8';
+
+  // Gradient fill for hold
+  const grd = ctx.createLinearGradient(0, holdY-holdH, 0, holdY);
+  grd.addColorStop(0,'#e0f0ff');
+  grd.addColorStop(1,'#b0cce8');
+  ctx.fillStyle=grd;
+  ctx.fill();
+  ctx.strokeStyle='#00b4ff'; ctx.lineWidth=2; ctx.stroke();
+
+  // Hold interior highlight
+  ctx.fillStyle='rgba(0,180,255,0.05)';
+  ctx.beginPath();
+  ctx.roundRect(cx-holdW+8, holdY-holdH+Rl+8, holdW*2-16, holdH-16, [72,72,4,4]);
+  ctx.fill();
+
+  // A320 wing inside (to show scale) — draw as blue outline
+  const wingW=3.5*SCALE, wingH=0.35*SCALE;
+  const wingY=holdY-holdH/2+Rl;
+  ctx.strokeStyle='rgba(0,180,255,0.7)'; ctx.lineWidth=2; ctx.setLineDash([]);
+  ctx.strokeRect(cx-wingW/2, wingY-wingH/2, wingW, wingH);
+  ctx.fillStyle='rgba(0,180,255,0.15)';
+  ctx.fillRect(cx-wingW/2, wingY-wingH/2, wingW, wingH);
+  ctx.fillStyle='rgba(0,180,255,0.8)'; ctx.font='bold 10px Barlow'; ctx.textAlign='center';
+  ctx.fillText('A320 WING (to scale)', cx, wingY+3);
+
+  // A320 fuselage inside (circle outline to show scale)
+  ctx.strokeStyle='rgba(255,180,0,0.6)'; ctx.lineWidth=2;
+  ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.arc(cx, wingY+1.8*SCALE, 2.0*SCALE, 0, Math.PI*2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,180,0,0.6)'; ctx.font='10px Barlow';
+  ctx.fillText('A320 fuselage (to scale)', cx, wingY+1.8*SCALE+3);
+
+  // Hold dimensions
+  ctx.strokeStyle='rgba(0,180,255,0.3)'; ctx.lineWidth=1; ctx.setLineDash([3,4]);
+  ctx.beginPath(); ctx.moveTo(cx-holdW, holdY-holdH+Rl-8); ctx.lineTo(cx+holdW, holdY-holdH+Rl-8); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='var(--accent)'; ctx.font='bold 11px Barlow'; ctx.textAlign='center';
+  ctx.fillText('7.7m wide cargo hold', cx, holdY-holdH+Rl-13);
+
+  // Label
+  ctx.fillStyle='rgba(0,180,255,0.6)'; ctx.font='bold 13px Barlow';
+  ctx.fillText('CARGO HOLD', cx, holdY-holdH/2+Rl+holdH*0.25);
+}
+
+// ── LOADING ANIMATION ──────────────────────────────────────────────
+const lCanvas = document.getElementById('c-load');
+const lCtx    = lCanvas.getContext('2d');
+let loadAnim = null, loadT = 0, loadPhase = 0;
+
+const PHASES = [
+  { label:'Positioning wing on transport cart...', dur:90 },
+  { label:'Approaching Beluga with cargo...', dur:80 },
+  { label:'Opening nose section...', dur:70 },
+  { label:'Loading wing into cargo hold...', dur:100 },
+  { label:'Closing and securing...', dur:60 },
+  { label:'✓ Loading complete — ready for departure!', dur:60 },
+];
+
+function startLoad() {
+  if (loadAnim) return;
+  document.getElementById('btnLoad').textContent='⏸ Loading...';
+  document.getElementById('btnLoad').classList.remove('primary');
+  loadAnim = setInterval(tickLoad, 16);
+}
+
+function resetLoad() {
+  clearInterval(loadAnim); loadAnim=null;
+  loadT=0; loadPhase=0;
+  document.getElementById('btnLoad').textContent='▶ Start Loading';
+  document.getElementById('btnLoad').classList.add('primary');
+  document.getElementById('progFill').style.width='0%';
+  document.getElementById('progLabel').textContent='Ready';
+  drawLoadFrame();
+}
+
+function tickLoad() {
+  loadT++;
+  const totalDur = PHASES.reduce((s,p)=>s+p.dur,0);
+  let elapsed=0, phaseStart=0;
+  for(let i=0;i<PHASES.length;i++){
+    if(loadT>=elapsed && loadT<elapsed+PHASES[i].dur){ loadPhase=i; phaseStart=elapsed; break; }
+    elapsed+=PHASES[i].dur;
+  }
+  if(loadT>=totalDur){ clearInterval(loadAnim); loadAnim=null; loadPhase=PHASES.length-1; document.getElementById('btnLoad').textContent='▶ Replay'; document.getElementById('btnLoad').classList.add('primary'); }
+
+  const pct = Math.min(100, (loadT/totalDur)*100);
+  document.getElementById('progFill').style.width=pct+'%';
+  document.getElementById('progLabel').textContent=PHASES[Math.min(loadPhase,PHASES.length-1)].label;
+  drawLoadFrame();
+}
+
+function drawLoadFrame() {
+  const W=lCanvas.width, H=lCanvas.height;
+  lCtx.fillStyle='#050b14'; lCtx.fillRect(0,0,W,H);
+
+  const totalDur=PHASES.reduce((s,p)=>s+p.dur,0);
+  const t=loadT/totalDur; // 0→1
+
+  // Ground
+  lCtx.fillStyle='#1a2a3a';
+  lCtx.fillRect(0, H-50, W, 50);
+  lCtx.fillStyle='#243040';
+  lCtx.fillRect(0, H-52, W, 4);
+  // Ground markings
+  for(let x=0;x<W;x+=80){
+    lCtx.fillStyle='rgba(255,220,0,0.3)';
+    lCtx.fillRect(x, H-50, 40, 3);
+  }
+
+  // Background factory
+  drawFactory(lCtx, 60, H-50, 0.7);
+
+  const phase0end = PHASES[0].dur/totalDur;
+  const phase1end = phase0end + PHASES[1].dur/totalDur;
+  const phase2end = phase1end + PHASES[2].dur/totalDur;
+  const phase3end = phase2end + PHASES[3].dur/totalDur;
+  const phase4end = phase3end + PHASES[4].dur/totalDur;
+
+  // Beluga plane (stationary on right)
+  const planeX = W*0.52;
+  const planeY = H-50;
+  drawBelugaSide(lCtx, planeX, planeY, t, phase2end, phase3end, phase4end);
+
+  // Wing cargo on cart
+  let wingX, wingY;
+  if(t < phase0end){
+    // Phase 0: wing sits on left
+    const p = t/phase0end;
+    wingX = 120 + p*20;
+    wingY = H-90;
+  } else if(t < phase1end){
+    // Phase 1: wing moves right toward plane
+    const p=(t-phase0end)/(phase1end-phase0end);
+    wingX = 140 + p*(planeX-240-140);
+    wingY = H-90;
+  } else if(t < phase3end){
+    // Phase 2-3: loading — wing goes up into hold
+    const p=Math.max(0,(t-phase2end)/(phase3end-phase2end));
+    wingX = planeX-100 + p*80;
+    wingY = H-90 - p*(160);
+  } else {
+    wingX = planeX-20;
+    wingY = H-250;
+  }
+
+  drawWingCart(lCtx, wingX, wingY, t, phase3end);
+
+  // Phase labels at top
+  lCtx.fillStyle='rgba(0,180,255,0.7)';
+  lCtx.font='bold 13px Barlow';
+  lCtx.textAlign='center';
+  lCtx.fillText(PHASES[Math.min(loadPhase,PHASES.length-1)].label, W/2, 28);
+}
+
+function drawBelugaSide(ctx, x, y, t, openStart, loadStart, closeStart) {
+  // Main fuselage
+  ctx.fillStyle='#d0e8f8';
+  // Body
+  ctx.beginPath();
+  ctx.moveTo(x-280, y-40);
+  ctx.quadraticCurveTo(x-320, y-60, x-300, y-80);
+  ctx.lineTo(x+180, y-80);
+  ctx.quadraticCurveTo(x+220, y-70, x+230, y-50);
+  ctx.lineTo(x+230, y-30);
+  ctx.quadraticCurveTo(x+180, y-10, x-280, y-10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle='#8ab0cc'; ctx.lineWidth=2; ctx.stroke();
+
+  // Hump (cargo hold) — big bulge on top
+  const humpOpen = t > openStart ? Math.min(1,(t-openStart)/(loadStart-openStart)) : 0;
+  const noseAngle = humpOpen * (-Math.PI*0.45);
+
+  // Draw hump body
+  ctx.fillStyle='#c0d8f0';
+  ctx.beginPath();
+  ctx.moveTo(x-220, y-78);
+  ctx.quadraticCurveTo(x-180, y-220, x-60, y-230);
+  ctx.quadraticCurveTo(x+60, y-235, x+120, y-160);
+  ctx.lineTo(x+120, y-80);
+  ctx.lineTo(x-220, y-80);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle='#8ab0cc'; ctx.lineWidth=2; ctx.stroke();
+
+  // Nose/loading door
+  ctx.save();
+  ctx.translate(x-250, y-50);
+  ctx.rotate(noseAngle);
+  ctx.fillStyle='#c0d8f0';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(-50, -10, -55, -40);
+  ctx.quadraticCurveTo(-40, -60, 0, -60);
+  ctx.lineTo(30, -60);
+  ctx.lineTo(30, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle='#00b4ff'; ctx.lineWidth=2; ctx.stroke();
+  ctx.restore();
+
+  // Windows strip (cheatline)
+  ctx.fillStyle='#1a4a7a';
+  ctx.fillRect(x-240, y-55, 430, 8);
+  ctx.fillStyle='#00b4ff';
+  ctx.fillRect(x-240, y-63, 430, 8);
+
+  // Windows
+  for(let i=0;i<8;i++){
+    ctx.fillStyle='rgba(0,180,255,0.4)';
+    ctx.beginPath(); ctx.ellipse(x-220+i*52, y-70, 8, 5, 0, 0, Math.PI*2); ctx.fill();
+  }
+
+  // Wings
+  ctx.fillStyle='#a8c8e0';
+  ctx.beginPath();
+  ctx.moveTo(x-20, y-20);
+  ctx.lineTo(x-160, y+30);
+  ctx.lineTo(x-160, y+20);
+  ctx.lineTo(x-20, y-28);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x+80, y-20);
+  ctx.lineTo(x+200, y+30);
+  ctx.lineTo(x+200, y+20);
+  ctx.lineTo(x+80, y-28);
+  ctx.closePath(); ctx.fill();
+
+  // Engine
+  ctx.fillStyle='#3a5a70';
+  ctx.beginPath(); ctx.ellipse(x-40, y+8, 6, 12, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillRect(x-40, y-4, 55, 12);
+  ctx.beginPath(); ctx.ellipse(x+15, y+2, 5, 11, 0, 0, Math.PI*2); ctx.fill();
+
+  // Tail
+  ctx.fillStyle='#b0c8e0';
+  ctx.beginPath();
+  ctx.moveTo(x+200, y-50);
+  ctx.lineTo(x+240, y-120);
+  ctx.lineTo(x+250, y-50);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(x+195, y-20);
+  ctx.lineTo(x+260, y-5);
+  ctx.lineTo(x+260, y-15);
+  ctx.lineTo(x+195, y-30);
+  ctx.closePath(); ctx.fill();
+
+  // Landing gear
+  ctx.strokeStyle='#3a5a70'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(x-80,y-10); ctx.lineTo(x-80,y); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(x-80,y+6,12,5,0,0,Math.PI*2); ctx.fillStyle='#2a3a48'; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(x+60,y-10); ctx.lineTo(x+60,y); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(x+60,y+6,12,5,0,0,Math.PI*2); ctx.fill();
+
+  // AIRBUS text
+  ctx.fillStyle='rgba(0,60,120,0.7)';
+  ctx.font='bold 14px Barlow'; ctx.textAlign='center';
+  ctx.fillText('AIRBUS', x+80, y-40);
+}
+
+function drawWingCart(ctx, x, y, t, loadedT) {
+  if(t >= loadedT) return; // wing is inside
+  // Cart wheels
+  ctx.fillStyle='#2a3a48';
+  ctx.beginPath(); ctx.arc(x-30, y+15, 8, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(x+30, y+15, 8, 0, Math.PI*2); ctx.fill();
+  // Cart body
+  ctx.fillStyle='#3a5a70';
+  ctx.fillRect(x-50, y, 100, 15);
+  // Wing (simplified shape)
+  ctx.fillStyle='rgba(0,180,255,0.6)';
+  ctx.strokeStyle='#00b4ff'; ctx.lineWidth=2;
+  ctx.beginPath();
+  ctx.moveTo(x-80, y-5);
+  ctx.lineTo(x+80, y-5);
+  ctx.lineTo(x+60, y-30);
+  ctx.lineTo(x-40, y-30);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle='#fff'; ctx.font='10px Barlow'; ctx.textAlign='center';
+  ctx.fillText('A320 WING', x, y-14);
+}
+
+function drawFactory(ctx, x, y, opacity) {
+  ctx.globalAlpha=opacity*0.4;
+  ctx.fillStyle='#1a3a5e';
+  ctx.fillRect(x, y-120, 180, 120);
+  ctx.fillStyle='#243a5e';
+  ctx.fillRect(x+20, y-140, 60, 20);
+  ctx.fillRect(x+100, y-150, 50, 30);
+  ctx.fillStyle='rgba(255,180,0,0.3)';
+  for(let wx=x+10;wx<x+180;wx+=30){ ctx.fillRect(wx, y-100, 16, 20); }
+  ctx.globalAlpha=1;
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+drawCrossSections();
+drawLoadFrame();
+</script>
+</body>
+</html>
